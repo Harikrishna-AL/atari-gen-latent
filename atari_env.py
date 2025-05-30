@@ -9,7 +9,7 @@ class AtariBreakoutEnv:
     If return_rgb=True, returns original RGB frames (210, 160, 3) instead of preprocessed grayscale (84, 84).
     """
     
-    def __init__(self, return_rgb: bool = False):
+    def __init__(self, return_rgb: bool = False, frameskip: int = 4):
         """Initialize the environment with specific settings.
         Args:
             return_rgb: If True, return original RGB frames in reset/step.
@@ -18,7 +18,7 @@ class AtariBreakoutEnv:
         self.env = gym.make(
             "ALE/Breakout-v5",
             render_mode='rgb_array',  # Enable rgb_array rendering
-            frameskip=4,  # Skip 4 frames between actions
+            frameskip=frameskip,  # Skip 4 frames between actions
             repeat_action_probability=0.0,  # Disable sticky actions
             full_action_space=False  # Use minimal action space
         )

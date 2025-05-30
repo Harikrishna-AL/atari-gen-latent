@@ -65,8 +65,8 @@ def main():
     world_model, _ = load_latent_action_model('checkpoints/latent_action/best.pt', device)
     world_model.to(device)
     world_model.eval()
-    if device.type == 'cuda':
-        world_model = torch.compile(world_model)
+    # if device.type == 'cuda':
+    #     world_model = torch.compile(world_model)
     
     # Load action-to-latent model
     print("[INFO] Loading action-to-latent model...")
@@ -74,8 +74,8 @@ def main():
     ckpt = torch.load('checkpoints/latent_action/action_state_to_latent_best.pt', map_location=device)
     action_model.load_state_dict(ckpt['model_state_dict'])
     action_model.eval()
-    if device.type == 'cuda':
-        action_model = torch.compile(action_model)
+    # if device.type == 'cuda':
+    #     action_model = torch.compile(action_model)
     
     # Load initial frame
     print("[INFO] Loading initial frame...")
