@@ -43,11 +43,11 @@ def run_and_save_video(env, video_path: str, num_frames: int = 1000, action_poli
 Path("videos").mkdir(exist_ok=True)
 
 # Initialize the environment with RGB output
-fast_env = AtariBreakoutEnv(return_rgb=True, frameskip=6)
+fast_env = AtariBreakoutEnv(return_rgb=True, frameskip=10)
 
 # Save video of random fast play
 run_and_save_video(fast_env, "videos/breakout_fast.mp4", num_frames=500, speed_factor=1.0)
 
 # Reinitialize env and save video of slow play (normal frame rate, slower action changes)
-slow_env = AtariBreakoutEnv(return_rgb=True, frameskip=2)
+slow_env = AtariBreakoutEnv(return_rgb=True, frameskip=1)
 run_and_save_video(slow_env, "videos/breakout_slow.mp4", num_frames=500, speed_factor=1.0)

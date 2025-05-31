@@ -69,13 +69,15 @@ class VectorQuantizer(nn.Module):
     - Uses straight-through estimator for backprop.
     - Returns quantized latents, indices, and losses.
     """
-    def __init__(self, num_embeddings=256, embedding_dim=128, commitment_cost=0.25):
+    def __init__(self, num_embeddings=256, embedding_dim=128, commitment_cost=0.25, freeze_old=False, old_count=256):
         super().__init__()
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
         self.commitment_cost = commitment_cost
         self.embeddings = nn.Embedding(num_embeddings, embedding_dim)
         self.embeddings.weight.data.uniform_(-1/num_embeddings, 1/num_embeddings)
+        self.freeze_old = freeze_old
+        self.old_count = old_count
     def forward(self, z):
         # z: (B, C, H, W)
         # Flatten spatial dimensions for vector quantization
@@ -92,6 +94,9 @@ class VectorQuantizer(nn.Module):
         codebook_loss = F.mse_loss(quantized, z.detach())
         # Straight-through estimator
         quantized = z + (quantized - z).detach()
+        if self.freeze_old and self.training:
+            self.embeddings.weight.requires_grad = True
+            
         return quantized, encoding_indices.view(z.shape[0], z.shape[2], z.shape[3]), commitment_loss, codebook_loss
 
 class Decoder(nn.Module):
@@ -137,6 +142,7 @@ class Decoder(nn.Module):
         cond_feat = F.interpolate(cond_feat, size=z.shape[2:], mode='bilinear', align_corners=False)
         # Concatenate and upsample
         x = torch.cat([z, cond_feat], dim=1)
+        next_latent = x
         x = self.fc(x)
         x = self.up(x)
         # Guarantee output is (B, 3, 160, 210) by resizing
@@ -150,10 +156,10 @@ class LatentActionVQVAE(nn.Module):
     - VectorQuantizer: Discretizes latent
     - Decoder: Reconstructs next frame from quantized latent and current frame
     """
-    def __init__(self, codebook_size=256, embedding_dim=128, commitment_cost=0.25):
+    def __init__(self, codebook_size=256, embedding_dim=128, commitment_cost=0.25, freeze_old=False, old_count=256):
         super().__init__()
         self.encoder = Encoder()
-        self.vq = VectorQuantizer(num_embeddings=codebook_size, embedding_dim=embedding_dim, commitment_cost=commitment_cost)
+        self.vq = VectorQuantizer(num_embeddings=codebook_size, embedding_dim=embedding_dim, commitment_cost=commitment_cost, freeze_old=freeze_old, old_count=old_count)
         self.decoder = Decoder()
 
     def forward(self, frame_t, frame_tp1, return_latent=False):
@@ -252,3 +258,24 @@ class ActionStateToLatentMLP(nn.Module):
         batch, latent_dim, codebook_size = probs.shape
         samples = torch.multinomial(probs.view(-1, codebook_size), 1).view(batch, latent_dim)
         return samples
+    
+def extend_codebook(model, new_embeddings=64):
+    old_weight = model.vq.embeddings.weight.data
+    old_num_embeddings, embedding_dim = old_weight.shape
+
+    # Create new embedding matrix
+    new_total = old_num_embeddings + new_embeddings
+    new_embedding = nn.Embedding(new_total, embedding_dim)
+
+    # Initialize new embeddings with small random values
+    new_embedding.weight.data[:old_num_embeddings] = old_weight
+    new_embedding.weight.data[old_num_embeddings:] = torch.empty((new_embeddings, embedding_dim)).uniform_(-1/new_total, 1/new_total)
+
+    # Replace the old embedding
+    model.vq.embeddings = new_embedding
+    model.vq.num_embeddings = new_total
+
+@torch.no_grad()
+def mask_frozen_embeddings(embedding_layer, old_count):
+    if embedding_layer.weight.grad is not None:
+        embedding_layer.weight.grad[:old_count] = 0
