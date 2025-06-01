@@ -1,5 +1,6 @@
 import os
 import glob
+from imageio.core.util import image_as_uint
 import torch
 import numpy as np
 from PIL import Image
@@ -98,28 +99,30 @@ def plot_latent_gifs(latent_folder: str):
     latent_files = sorted(glob.glob(os.path.join(latent_folder, '*_latents.pt')))
     
     for latent_file in latent_files:
-        latents = torch.load(latent_file)
-        latents = [latent.numpy() for latent in latents]  # Convert to numpy arrays
-        latents = np.array(latents)  # Convert list to numpy array
-        latents = latents.squeeze(1)
-        latents = latents[:, :1, :, :]  # Assuming latents are in shape (N, C, H, W) and we want the first 3 channels
-        latents = latents.transpose(0, 3, 2, 1)  # Convert to (N, H, W, C) for imageio
-        latents = (latents * 255).astype(np.uint8)  # Convert to uint8 for imageio
-        latents = latents.squeeze(1)
-        # convert 128 dim to 3 for easy visualization
-        # latents = [np.clip(latent[:3], 0, 1) for latent in latents]
-        #increase the resolution 50 times
-        latents = np.repeat(np.repeat(latents, 50, axis=1), 50, axis=2)  # Increase resolution by 50x
-  
-        print(f"Loaded {len(latents)} latents from {latent_file}")
-        print(f"Latent shape: {latents.shape}")
-        # Create GIF
-        gif_path = latent_file.replace('_latents.pt', '.gif')
-        #the plot is grayscale 
-        
-        imageio.mimsave(gif_path, latents, duration=0.1)  # Adjust duration as needed
-        print(f"Saved GIF: {gif_path}")
-        
+        if "velocity" not in latent_file:
+            latents = torch.load(latent_file)
+            latents = [latent.numpy() for latent in latents]  # Convert to numpy arrays
+            latents = np.array(latents)  # Convert list to numpy array
+            latents = latents.squeeze(1)
+            latents = latents[:, :1, :, :]  # Assuming latents are in shape (N, C, H, W) and we want the first 3 channels
+            latents = latents.transpose(0, 3, 2, 1)  # Convert to (N, H, W, C) for imageio
+            latents = (latents * 255).astype(np.uint8)  # Convert to uint8 for imageio
+            print(latents.shape)
+            latents = latents.squeeze(3)
+            # convert 128 dim to 3 for easy visualization
+            # latents = [np.clip(latent[:3], 0, 1) for latent in latents]
+            #increase the resolution 50 times
+            latents = np.repeat(np.repeat(latents, 50, axis=1), 50, axis=2)  # Increase resolution by 50x
+    
+            print(f"Loaded {len(latents)} latents from {latent_file}")
+            print(f"Latent shape: {latents.shape}")
+            # Create GIF
+            gif_path = latent_file.replace('_latents.pt', '.gif')
+            #the plot is grayscale 
+            
+            imageio.mimsave(gif_path, latents, duration=0.1)  # Adjust duration as needed
+            print(f"Saved GIF: {gif_path}")
+            
 def main():
     video_folder = "videos"
     # compute differnce between two latents to find the velocity latent
