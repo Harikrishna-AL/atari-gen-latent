@@ -88,3 +88,4 @@ There are abnormalities in the normal and the slower ball generations. For eg: I
 In the normal ball generation, the ball seems to stop moving in between. This could be solved by using better world models and training the action to latent mlp with more data.
 
 ### Changing the bricks design with time
+I tried manipulating the latent space to change the bricks design with time. I wanted to see if I could generate a game with changing level with time without further training. Even after permuting certain targeted regions of the latent space, I was not able to achieve any significant change in the bricks design. The bricks design remained the same as the original game with some barely visible patches.
