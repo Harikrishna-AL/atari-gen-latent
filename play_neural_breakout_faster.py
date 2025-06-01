@@ -281,7 +281,7 @@ def main():
     
     import imageio
     os.makedirs('videos/outputs', exist_ok=True)
-    gif_path = os.path.join('videos/outputs', f'neural_breakout_{int(time.time())}.gif')
+    gif_path = os.path.join('outputs/', f'neural_breakout_{int(time.time())}.gif')
     imageio.mimsave(gif_path, frames, duration=1/FPS)
     print(f"Saved frames as GIF to {gif_path}")
     return latents

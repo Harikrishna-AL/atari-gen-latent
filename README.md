@@ -1,137 +1,28 @@
-# Disclaimer
+# Experiment: Manipulating the Latent Space of a World Model to Change Game Physics
 
-**This codebase has only been tested for Atari Breakout. It is very hacky, trained on a small number of samples, and is not at all optimized. Use at your own risk!**
+I wanted to explore the latent space and the things one can achieve without further training. I explored the latent space to achieve two things: 1) increase the ball speed and 2) change the bricks design with time.
 
----
+Why this experiment is cool and important at the same time? If this is possible it means we can completely interpret the latent space and programmatically manipulate it according to our requirement without further or with minimal training. I conducted this experiment to tweak the game physics using latent manipulation or minimal fine tuning. 
 
-# Atari Pixels Project
-
-This projects aims to create a neural playable version of Atari Breakout by learning purely from videos of the game. It's a small replica of what [Google's Genie project](https://deepmind.google/discover/blog/genie-2-a-large-scale-foundation-world-model/), where they learned an interactive and playable world models purely through videos of game.
-
-**Watch the video**
-
-[![Watch the video](https://img.youtube.com/vi/H8Eh1HlLzZM/0.jpg)](https://www.youtube.com/watch?v=H8Eh1HlLzZM)
+### checking whether the world model can reconstruct frames with faster ball movement.  
 
 
-## Part 1: DQN Training & Exploration
-- Implements a Deep Q-Network (DQN) agent for Atari Breakout.
-- Supports two exploration strategies:
-  - **Temperature-based (Boltzmann) exploration** with Prioritized Experience Replay (PER).
-  - **Random Network Distillation (RND)** for intrinsic motivation and improved exploration.
-- Modular, efficient, and test-driven codebase.
-- Current progress: Agent achieves a score up to 20.
-- Next steps: Train for longer, increase max steps per episode to 10,000, and target scores of 200+.
+### Visualise the the latent space and visually differentiate between latent spaces of faster and slower ball speed.
 
-See [part1.md](part1.md) for full details, implementation, and next steps.
+I generated gameplay videos of the game "Breakout" with different ball speeds using a Random agent. The videos were then passed through the world model to obtain the latent representations. Upon visualizing the latent space, I observed that the latent representations of the faster ball speed gameplay were distinct from those of the slower ball speed gameplay. This suggests that the world model captures the dynamics of the game, including the speed of the ball, in its latent space.
 
----
+<!-- ![Latent Space Visualization](outputs/breakout_fast.gif) -->
+<p float="left">
+  <img src="outputs/breakout_fast.gif" width="200" />
+  <img src="outputs/breakout_slow.gif" width="200" />
+</p>
 
-## Getting Started
+Since the ball passes faster through certain areas, I noticed that certain region in the latent space has more frequent updates compared to others. This indicates that the world model is sensitive to the speed of the ball and can differentiate between faster and slower gameplay. The question is how to find out the exact latent vector that represents the ball speed and how to manipulate it to achieve faster ball movement in the game.
 
-### 1. Install Dependencies and Atari ROMs
-```bash
-pip install -r requirements.txt
-python -m AutoROM --accept-license
-```
+Methods to increase the ball speed:
+- Latent interpolation 
+  Compute and store the latent representations of both the faster and slower gameplay.  Compute the average difference between them to identify the latent vector that represents the velocity of the ball. Add this velocity vector to any latent vector to reconstruct frames with faster ball speed. 
 
-### 2. Train the DQN Agent
-- **Default (temperature-based exploration):**
-  ```bash
-  python train_dqn.py
-  ```
-- **RND-based exploration:**
-  ```bash
-  python train_dqn.py --exploration_mode rnd
-  ```
-- Additional arguments (see `python train_dqn.py --help`) allow you to control episodes, buffer size, and more.
+  Either consider manipulating the entire latent or only the visually identified area representing the ball movement. 
 
-### 3. Generate Gameplay Videos
-- To record videos of a trained (or random) agent:
-  ```bash
-  python record_videos.py --checkpoint_path <path_to_checkpoint> --output_dir videos/
-  e.g. python record_videos.py --bulk --total_videos 100 --percent_random 15 --output_dir bulk_videos
-  ```
-- Replace `<path_to_checkpoint>` with the path to your saved model checkpoint (see `checkpoints/`).
-- Videos will be saved as MP4 files in the specified output directory.
-
----
-
-## Part 2: Train Latent Action Prediction Model
-- **Prepare data:** Ensure gameplay videos are available in `bulk_videos/` (from Part 1).
-- **Train VQ-VAE latent action model:**
-  ```bash
-  python train_latent_action.py
-  ```
-- **Checkpoints and logs:**
-  - Best model: `checkpoints/latent_action/best.pt`
-  - Processed data: see `data/` and `vqvae_recons/`
-  - Training logs and metrics: Weights & Biases (wandb)
-- **Evaluation:**
-  - Run `test_latent_action_model.py` for automated tests and metrics
-  - Visualize reconstructions and codebook usage as described in part2.md
-
-See [part2.md](part2.md) for full details, implementation, and next steps.
-
----
-
-## Part 3: Next Frame Prediction Model (World Model)
-- **Note:** The decoder from Part 2 serves as the world model. No separate training is required unless you wish to experiment with alternative architectures.
-- **Evaluate world model:**
-  - Use the decoder to predict next frames given current frame and latent action index
-  - For multi-step prediction and rollout analysis, see evaluation code in `test_latent_action_model.py`
-
----
-
-## Part 4: Train Action-to-Latent Mapping Model
-- **Extract (action, latent_code) pairs using trained VQ-VAE:**
-  ```bash
-  python collect_action_latent_pairs.py
-  ```
-  - Output: `data/actions/action_latent_pairs.json`
-- **Train the action-to-latent MLP:**
-  ```bash
-  python train_action_to_latent.py
-  ```
-  - Best checkpoint: `checkpoints/latent_action/action_to_latent_best.pt`
-- **Evaluate mapping accuracy:**
-  - Run `test_latent_action_data_collection.py` and `test_latent_action_model.py`
-  - Analyze accuracy and code distributions as described in part4.md
-
-See [part4.md](part4.md) for full details, implementation, and next steps.
-
----
-
-## Part 5: Playable Neural Breakout (World Model Demo)
-- **Run a random agent in the neural world model:**
-  ```bash
-  python neural_random_game.py
-  ```
-  - Output: `data/neural_random_game.gif` (video of neural gameplay)
-- **Play Breakout using the neural world model:**
-  ```bash
-  python play_neural_breakout.py
-  ```
-  - Controls: SPACE (Fire), LEFT/RIGHT ARROW, PERIOD (NOOP), ESC/Q (Quit)
-  - Requires trained models from Parts 2 and 4
-- **All inference runs on GPU if available, otherwise MPS/CPU.**
-- **For best performance, ensure torch.compile is enabled and models are on CUDA.**
-
-See [part5.md](part5.md) for full details, implementation, and next steps.
-
----
-
-## Utility & Debug Scripts
-- **debug_color_channels.py:** Visualizes and compares color channels between environment frames and PNG files to debug color mismatches.
-- **debug_first_step_difference.py:** Compares predicted vs. ground truth latents and reconstructions for the first step of the neural random game, helping debug model discrepancies.
-- **neural_random_game.py:** Runs a random agent in the neural world model and saves a GIF of the generated gameplay for qualitative evaluation.
-
----
-## Suggested Improvements
-- Train DQN agent for longer (by increasing max steps per episode to 10,000 and target scores of 200+)
-- Generate 1000s of videos of agent playing with a higher percentage of random agent actions:
-  ```bash
-  python record_videos.py --bulk --total_videos 1000 --percent_random 20 --output_dir bulk_videos
-  ```
-- Train the latent action model for much longer to achieve convergence
-- Collect much more data for action → latent code mapping
-- Try with different Atari games
+- Fine tuning
