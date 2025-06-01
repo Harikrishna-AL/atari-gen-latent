@@ -48,3 +48,43 @@ Methods to increase the ball speed:
 This plot clearly shows that the world model could reconstruct the next frame even if the ball speed is faster. This means that the world model is capable of understanding the dynamics of the game, including the speed of the ball.
 
 ### Training the (state, action, speed_idx) mlp to latent with the new dataset
+I added a few extra dimensions to the input of the mlp to include the speed index. The speed_index is passed as an one hot encoding with the following index values representing:
+
+```python
+SPEED_INDEX = {
+    "normal": 0,
+    "speed": 1,
+    "slow": 2
+}
+```
+The new dataloader returns the state, action and speed index where the dataset contains frames with different ball speeds. The mlp is trained to predict the latent vector given the state, action and speed index.
+
+I was able to achieve a validation accuracy of 93% with only 100 epochs of training. The following code was used to collect the data and train the mlp:
+
+```bash
+python3 collect_action_latent_pairs.py --with_frames --with_speed
+python3 train_action_to_latent.py --with_frames --with_speed
+```
+
+The loss curve is as follows:
+![loss curve](outputs/state_speed_latent_mlp_loss.png)
+
+With the new mlp, I was able to reconstruct the frames with faster slower or normal ball speed. The following code was used to generate the frames:
+
+```bash
+python3 play_neural_breakout_faster.py --speed_idx <speed_index>
+```
+The reconstructed frames with different ball speeds are as follows:
+<div style="text-align: center;">
+  <img src="outputs/neural_breakout_1748790155.gif" width="200" />
+  <img src="outputs/neural_breakout_1748790238.gif" width="200" />
+  <img src="outputs/neural_breakout_1748790353.gif" width="200" />
+</div>
+
+It can be clearly seen that the ball speed is different in each of the gifs. The first gif has a faster ball speed, the second gif has a normal ball speed and the third gif has a slower ball speed. Therefore, now the speed of the gameplay can be increased or decreased willingly using the speed index. 
+
+There are abnormalities in the normal and the slower ball generations. For eg: In the slower ball generation, the ball is not moving at all. This is the frame rate might be too low for the ball to move between the consecutive frames. This could be solved by using a recurrent architecture to take multiple frames into account while generating the next frame. 
+
+In the normal ball generation, the ball seems to stop moving in between. This could be solved by using better world models and training the action to latent mlp with more data.
+
+### Changing the bricks design with time
