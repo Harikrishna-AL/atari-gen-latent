@@ -58,8 +58,10 @@ def train_one_epoch(model, loader, criterion, optimizer, device, scaler=None, wi
         latents = latents.to(device)
         optimizer.zero_grad()
         with torch.cuda.amp.autocast(enabled=(scaler is not None)):
-            if with_frames:
+            if with_frames and not with_speed:
                 logits = model(actions, frames)
+            elif with_frames and with_speed:
+                logits = model(actions, frames, speed_idx)
             else:
                 logits = model(actions)
             loss = criterion(logits.view(-1, 256), latents.view(-1))
@@ -102,8 +104,10 @@ def eval_one_epoch(model, loader, criterion, device, with_frames=False, with_spe
                 actions = actions.to(device)
                 frames = None
             latents = latents.to(device)
-            if with_frames:
+            if with_frames and not with_speed:
                 logits = model(actions, frames)
+            elif with_frames and with_speed:
+                logits = model(actions, frames, speed_idx)
             else:
                 logits = model(actions)
             loss = criterion(logits.view(-1, 256), latents.view(-1))
@@ -142,7 +146,7 @@ def main():
         model_name = 'action_state_to_latent_best.pt'
     elif args.with_frames and args.with_speed:
         train_loader, val_loader = get_action_state_latent_dataloaders(batch_size=BATCH_SIZE)
-        model = ActionStateToLatentMLP(extra_dim=1)
+        model = ActionStateToLatentMLP(extra_dim=3)
         model_name = 'action_state_speed_to_latent_best.pt'
     else:
         train_loader, val_loader = get_action_latent_dataloaders(batch_size=BATCH_SIZE)
@@ -164,7 +168,7 @@ def main():
     for epoch in range(1, EPOCHS + 1):
         print(f"Epoch {epoch}/{EPOCHS}")
         train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device, scaler, with_frames=args.with_frames, with_speed=args.with_speed)
-        val_loss, val_acc = eval_one_epoch(model, val_loader, criterion, device, with_frames=args.with_frames)
+        val_loss, val_acc = eval_one_epoch(model, val_loader, criterion, device, with_frames=args.with_frames, with_speed=args.with_speed)
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f}")
         print(f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
         wandb.log({

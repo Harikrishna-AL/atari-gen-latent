@@ -148,6 +148,40 @@ class ActionStateLatentTripleNPZDataset(Dataset):
             torch.from_numpy(latent_code.astype(np.int64))
         )
 
+class ActionStateLatentSpeedQuadDataset(Dataset):
+    def __init__(self, npz_path):
+        data = np.load(npz_path)
+        self.actions = data['actions']  # (N,)
+        self.frames = data['frames']    # (N, 6, 210, 160)
+        self.latents = data['latents']  # (N, 35)
+        self.speed_idx = data['speed_idx']
+        self.num_classes = 4
+        self.latent_dim = 35
+        self.codebook_size = 256
+        self.num_speeds = 3
+
+    def __len__(self):
+        return len(self.actions)
+
+    def __getitem__(self, idx):
+        action = self.actions[idx]
+        frames = self.frames[idx]
+        latent_code = self.latents[idx]
+        speed_idx = self.speed_idx[idx]
+        # One-hot encode action
+        action_onehot = np.zeros(self.num_classes, dtype=np.float32)
+        action_onehot[action] = 1.0
+
+        speed_onehot = np.zeros(self.num_speeds, dtype=np.float32)
+        speed_onehot[speed_idx] = 1.0
+        return (
+            torch.from_numpy(action_onehot),
+            torch.from_numpy(frames.astype(np.float32)),
+            torch.from_numpy(latent_code.astype(np.int64)),
+            torch.from_numpy(speed_onehot)
+        )
+
+
 def get_action_latent_dataloaders(batch_size=128, num_workers=0, pin_memory=True, seed=42):
     json_path = os.path.join('data', 'actions', 'action_latent_pairs.json')
     dataset = ActionLatentPairDataset(json_path)
@@ -161,10 +195,10 @@ def get_action_latent_dataloaders(batch_size=128, num_workers=0, pin_memory=True
     return train_loader, val_loader
 
 def get_action_state_latent_dataloaders(batch_size=128, num_workers=0, pin_memory=True, seed=42):
-    npz_path = os.path.join('data', 'actions', 'action_state_latent_triples.npz')
+    npz_path = os.path.join('data', 'actions', 'action_latent_pairs.npz')
     json_path = os.path.join('data', 'actions', 'action_state_latent_triples.json')
     if os.path.exists(npz_path):
-        dataset = ActionStateLatentTripleNPZDataset(npz_path)
+        dataset = ActionStateLatentSpeedQuadDataset(npz_path)
     elif os.path.exists(json_path):
         dataset = ActionStateLatentTripleDataset(json_path)
     else:

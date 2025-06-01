@@ -250,7 +250,7 @@ class ActionStateToLatentMLP(nn.Module):
         # action: (B, 4), frames: (B, 6, 210, 160)
         frame_features = self.frame_encoder(frames)
         if extra is not None:
-            combined_features = torch.cat([action, extra, frame_features], dim=1)
+            combined = torch.cat([action, extra, frame_features], dim=1)
         else:
             combined = torch.cat([action, frame_features], dim=1)
         out = self.net(combined)
