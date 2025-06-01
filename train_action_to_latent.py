@@ -36,16 +36,21 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def train_one_epoch(model, loader, criterion, optimizer, device, scaler=None, with_frames=False):
+def train_one_epoch(model, loader, criterion, optimizer, device, scaler=None, with_frames=False, with_speed=False):
     model.train()
     running_loss = 0.0
     correct = 0
     total = 0
     for batch in tqdm(loader, desc='Train', leave=False):
-        if with_frames:
+        if with_frames and not with_speed:
             actions, frames, latents = batch
             actions = actions.to(device)
             frames = frames.to(device)
+        if with_frames and with_speed:
+            actions, frames, latents, speed_idx = batch
+            actions = actions.to(device)
+            frames = frames.to(device)
+            speed_idx = speed_idx.to(device)
         else:
             actions, latents = batch
             actions = actions.to(device)
@@ -76,17 +81,22 @@ def train_one_epoch(model, loader, criterion, optimizer, device, scaler=None, wi
     accuracy = correct / total
     return avg_loss, accuracy
 
-def eval_one_epoch(model, loader, criterion, device, with_frames=False):
+def eval_one_epoch(model, loader, criterion, device, with_frames=False, with_speed=False):
     model.eval()
     running_loss = 0.0
     correct = 0
     total = 0
     with torch.no_grad():
         for batch in tqdm(loader, desc='Val', leave=False):
-            if with_frames:
+            if with_frames and not with_speed:
                 actions, frames, latents = batch
                 actions = actions.to(device)
                 frames = frames.to(device)
+            if with_frames and with_speed:
+                actions, frames, latents, speed_idx = batch
+                actions = actions.to(device)
+                frames = frames.to(device)
+                speed_idx = speed_idx.to(device)
             else:
                 actions, latents = batch
                 actions = actions.to(device)
@@ -108,6 +118,7 @@ def eval_one_epoch(model, loader, criterion, device, with_frames=False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--with_frames', action='store_true', help='Use action+state (frames) model and data')
+    parser.add_argument('--with_speed', action='store_true', help='Use action+state+speed model and data')
     args = parser.parse_args()
 
     set_seed(SEED)
@@ -125,10 +136,14 @@ def main():
     })
 
     # Data
-    if args.with_frames:
+    if args.with_frames and not args.with_speed:
         train_loader, val_loader = get_action_state_latent_dataloaders(batch_size=BATCH_SIZE)
         model = ActionStateToLatentMLP()
         model_name = 'action_state_to_latent_best.pt'
+    elif args.with_frames and args.with_speed:
+        train_loader, val_loader = get_action_state_latent_dataloaders(batch_size=BATCH_SIZE)
+        model = ActionStateToLatentMLP(extra_dim=1)
+        model_name = 'action_state_speed_to_latent_best.pt'
     else:
         train_loader, val_loader = get_action_latent_dataloaders(batch_size=BATCH_SIZE)
         model = ActionToLatentMLP()
@@ -148,7 +163,7 @@ def main():
 
     for epoch in range(1, EPOCHS + 1):
         print(f"Epoch {epoch}/{EPOCHS}")
-        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device, scaler, with_frames=args.with_frames)
+        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device, scaler, with_frames=args.with_frames, with_speed=args.with_speed)
         val_loss, val_acc = eval_one_epoch(model, val_loader, criterion, device, with_frames=args.with_frames)
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f}")
         print(f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")

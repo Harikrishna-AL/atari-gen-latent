@@ -217,10 +217,11 @@ class ActionToLatentMLP(nn.Module):
         return samples
 
 class ActionStateToLatentMLP(nn.Module):
-    def __init__(self, action_dim=4, hidden1=512, hidden2=256, latent_dim=35, codebook_size=256, dropout=0.2):
+    def __init__(self, action_dim=4, extra_dim=0, hidden1=512, hidden2=256, latent_dim=35, codebook_size=256, dropout=0.2):
         super().__init__()
         self.latent_dim = latent_dim
         self.codebook_size = codebook_size
+        self.extra_dim = extra_dim
         # Frame encoder for 2 RGB frames (6 channels, 210x160)
         self.frame_encoder = nn.Sequential(
             nn.Conv2d(6, 16, kernel_size=8, stride=4),  # (B, 16, 51, 39)
@@ -233,9 +234,10 @@ class ActionStateToLatentMLP(nn.Module):
             nn.Linear(64 * 11 * 8, 128),
             nn.ReLU(),
         )
+        total_dim = action_dim + extra_dim + 128  # Action + extra features + frame features
         # Combined MLP for action + frame features
         self.net = nn.Sequential(
-            nn.Linear(action_dim + 128, hidden1),
+            nn.Linear(total_dim, hidden1),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden1, hidden2),
@@ -244,10 +246,13 @@ class ActionStateToLatentMLP(nn.Module):
             nn.Linear(hidden2, latent_dim * codebook_size)
         )
 
-    def forward(self, action, frames):
+    def forward(self, action, frames, extra=None):
         # action: (B, 4), frames: (B, 6, 210, 160)
         frame_features = self.frame_encoder(frames)
-        combined = torch.cat([action, frame_features], dim=1)
+        if extra is not None:
+            combined_features = torch.cat([action, extra, frame_features], dim=1)
+        else:
+            combined = torch.cat([action, frame_features], dim=1)
         out = self.net(combined)
         return out.view(-1, self.latent_dim, self.codebook_size)
 
