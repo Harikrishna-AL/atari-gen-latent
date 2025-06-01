@@ -27,6 +27,24 @@ Methods to increase the ball speed:
 
   Either consider manipulating the entire latent or only the visually identified area representing the ball movement. 
 
+  I tried both methods and found that none of the methods could actually increase the ball speed in a visually noticeable way. In fact, the ball direction was changed to something random. 
+
 - Fine tuning
+  Since, I was not able to isolate the velocity vector, I decided to fine tune the world model with a new dataset containing faster ball speed. For this fine tuning, I added new entires to the codebook but nullified the gradients to the older entires in the codebook. This way, I was able to preserve the old latent space while adding new entries that would represent the ball speed upon training. I did train and achieve the following loss graph:
+
+  ![loss graph](outputs/world_model_loss.png)
+
+  The following code was used to fine tune the world model:
+  ```bash
+  python3 finetune_for_speed.py
+  ```
+
+  Upon closer look, I noticed that the training dataset was in RGB while the order used to train the world model was BGR. Therefore, I didn't actually generate using this new world model. Shortly after this, I realized a better way to doing this i.e to train the (state, action) mlp to latent with the new dataset. Firstly, I confirmed if the existing world model could reconstruct the frames with faster ball speed.
 
 ### checking whether the world model can reconstruct frames with faster ball movement.  
+
+![reconstruction of faster ball speed](outputs/speed_recons.png)
+
+This plot clearly shows that the world model could reconstruct the next frame even if the ball speed is faster. This means that the world model is capable of understanding the dynamics of the game, including the speed of the ball.
+
+### Training the (state, action, speed_idx) mlp to latent with the new dataset
