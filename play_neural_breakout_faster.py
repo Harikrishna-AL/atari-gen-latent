@@ -45,10 +45,12 @@ def action_to_onehot(action_idx, device):
 
 def main():
     # Parse arguments
+    frames = []
     parser = argparse.ArgumentParser()
     parser.add_argument('--temperature', type=float, default=0.01, help='Sampling temperature for latent prediction')
+    parser.add_argument('--speed_idx', type=int, default=0, help='Index for speed latent (0, 1, or 2)')
     args = parser.parse_args()
-    
+    speed_idx = args.speed_idx
     # Initialize pygame
     pygame.init()
     window = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -70,9 +72,16 @@ def main():
     
     # Load action-to-latent model
     print("[INFO] Loading action-to-latent model...")
-    action_model = ActionStateToLatentMLP().to(device)
-    ckpt = torch.load('checkpoints/latent_action/action_state_to_latent_best.pt', map_location=device)
-    action_model.load_state_dict(ckpt['model_state_dict'])
+    action_model = ActionStateToLatentMLP(extra_dim=3).to(device)
+    ckpt = torch.load('checkpoints/latent_action/action_state_speed_to_latent_best.pt', map_location=device)
+    fixed_state_dict = {}
+    for k,v in ckpt['model_state_dict'].items():
+        if k.startswith('_orig_mod'):
+            fixed_state_dict[k.replace('_orig_mod.', '')] = v
+        else:
+            fixed_state_dict[k] = v
+    
+    action_model.load_state_dict(fixed_state_dict)
     action_model.eval()
     # if device.type == 'cuda':
     #     action_model = torch.compile(action_model)
@@ -119,6 +128,9 @@ def main():
     running = True
     latents = []
     step = 0
+    speed_onehot = torch.zeros(1, 3, device=device)  # Speed latent placeholder
+    speed_onehot = speed_onehot.scatter_(1, torch.tensor([[speed_idx]], device=device), 1.0)
+    # speed_idx = torch.tensor([0.0,1.0,0.0], device=device).unsqueeze(0)
     while running:
         # Default to NOOP (0) each frame
         action_idx = 0
@@ -161,12 +173,9 @@ def main():
             
             # Get action prediction
             onehot = action_to_onehot(action_idx, device)
-            logits = action_model(onehot, stacked_frames)
-            # print(f"[INFO] Logits shape: {logits.shape}")
+            logits = action_model(onehot, stacked_frames, speed_onehot)
             # Sample indices from logits
-            indices = action_model.sample_latents(logits, temperature=args.temperature)
-            # print(f"[INFO] Indices shape: {indices.shape}")
-            
+            indices = action_model.sample_latents(logits, temperature=args.temperature)            
             # Reshape indices and get embeddings
             indices = indices.view(1, 5, 7)
             # print(f"Indices: {indices}")
@@ -181,41 +190,41 @@ def main():
             frame_in = current_frame.permute(0, 1, 3, 2)
             quantized = quantized.to(device)
   
-            quantized = quantized + velocity_latent * 0
-            brick_roi = quantized[:, :, 0:5, 2:3].clone()  # Shape: (1, 128, 3, 1)
-            brick_roi = brick_roi.reshape(1, 128, 5)       # Shape: (1, 128, 3)
+            # quantized = quantized + velocity_latent * 0
+            # brick_roi = quantized[:, :, 0:5, 2:3].clone()  # Shape: (1, 128, 3, 1)
+            # brick_roi = brick_roi.reshape(1, 128, 5)       # Shape: (1, 128, 3)
 
-            if step % 100 == 0:
-                # 1. Compute channel-wise variance and select top 10 important channels
-                importance = quantized.var(dim=(2,3))               # Shape: (1, 128)
-                print(f"Importance shape: {importance.shape}, Importance: {importance}")
-                topk = torch.topk(importance, k=128, dim=1).indices[0]  # Shape: (10,)
+            # if step % 100 == 0:
+            #     # 1. Compute channel-wise variance and select top 10 important channels
+            #     importance = quantized.var(dim=(2,3))               # Shape: (1, 128)
+            #     print(f"Importance shape: {importance.shape}, Importance: {importance}")
+            #     topk = torch.topk(importance, k=128, dim=1).indices[0]  # Shape: (10,)
 
-                # 2. Create a random permutation of spatial (3) values
-                perm = torch.randperm(5)
+            #     # 2. Create a random permutation of spatial (3) values
+            #     perm = torch.randperm(5)
 
-                # 3. Extract the topk channel patch: Shape (10, 3)
-            patch_selected = brick_roi[0, topk, :]            # (10, 3)
+            #     # 3. Extract the topk channel patch: Shape (10, 3)
+            # patch_selected = brick_roi[0, topk, :]            # (10, 3)
             
-            # 4. Permute spatially (3-dim) for each selected channel
-            patch_selected = patch_selected[:, perm]          # (10, 3)
+            # # 4. Permute spatially (3-dim) for each selected channel
+            # patch_selected = patch_selected[:, perm]          # (10, 3)
 
-            # 5. Put permuted patch back
-            brick_roi[0, topk, :] = patch_selected            # Assign back into clone
+            # # 5. Put permuted patch back
+            # brick_roi[0, topk, :] = patch_selected            # Assign back into clone
 
-            # 6. Reshape and assign back to quantized
-            brick_roi_reshaped = brick_roi.reshape(1, 128, 5, 1)
-            quantized[:, :, 0:5, 2:3] = brick_roi_reshaped + torch.randn_like(brick_roi_reshaped) * 0  # Add small noise
-            # quantized[:, :, 0:5, 3:4] = brick_roi_reshaped
-            # quantized[:, :, 0:5, 4:5] += velocity_latent
-            # quantized = quantized + torch.randn_like(quantized) * 0.1  # Add small noise
-            velocity_latent_important = velocity_latent.var(dim=(2, 3))  # Shape: (128,)
-            important_channels = torch.topk(velocity_latent_important, k=10, dim=1).indices[0]
-            # print(f"Important channels: {important_channels}")
+            # # 6. Reshape and assign back to quantized
+            # brick_roi_reshaped = brick_roi.reshape(1, 128, 5, 1)
+            # quantized[:, :, 0:5, 2:3] = brick_roi_reshaped + torch.randn_like(brick_roi_reshaped) * 0  # Add small noise
+            # # quantized[:, :, 0:5, 3:4] = brick_roi_reshaped
+            # # quantized[:, :, 0:5, 4:5] += velocity_latent
+            # # quantized = quantized + torch.randn_like(quantized) * 0.1  # Add small noise
+            # velocity_latent_important = velocity_latent.var(dim=(2, 3))  # Shape: (128,)
+            # important_channels = torch.topk(velocity_latent_important, k=10, dim=1).indices[0]
+            # # print(f"Important channels: {important_channels}")
             
-            quantized[:, important_channels, 0:5, 4:5] += velocity_latent[:,important_channels, 0:5, 4:5] * 10
-            #re quantize the quantized tensor
-            quantized , indices, commitment_loss, codebook_loss = world_model.vq(quantized)
+            # # quantized[:, important_channels, 0:5, 4:5] += velocity_latent[:,important_channels, 0:5, 4:5] * 10
+            # #re quantize the quantized tensor
+            # quantized , indices, commitment_loss, codebook_loss = world_model.vq(quantized)
             # quantized[:, :, 0:5, 4:5] *= 1
             
             # channel_variances = quantized.var(dim=(0, 2, 3))  # Shape: (128,)
@@ -235,6 +244,8 @@ def main():
         # Convert the frame to a pygame surface for display
         frame_np = current_frame.squeeze(0).permute(1, 2, 0).cpu().numpy()
         frame_np = (frame_np * 255).clip(0, 255).astype(np.uint8)
+        
+        frames.append(frame_np)
         
         # Create surface from numpy array
         frame_surface = pygame.surfarray.make_surface(np.transpose(frame_np, (1, 0, 2)))
@@ -267,6 +278,12 @@ def main():
     # Clean up
     pygame.quit()
     print("Game closed.")
+    
+    import imageio
+    os.makedirs('videos/outputs', exist_ok=True)
+    gif_path = os.path.join('videos/outputs', f'neural_breakout_{int(time.time())}.gif')
+    imageio.mimsave(gif_path, frames, duration=1/FPS)
+    print(f"Saved frames as GIF to {gif_path}")
     return latents
 
 if __name__ == "__main__":
