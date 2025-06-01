@@ -207,13 +207,13 @@ def main():
             brick_roi_reshaped = brick_roi.reshape(1, 128, 5, 1)
             quantized[:, :, 0:5, 2:3] = brick_roi_reshaped + torch.randn_like(brick_roi_reshaped) * 0  # Add small noise
             # quantized[:, :, 0:5, 3:4] = brick_roi_reshaped
-            # quantized[:, :, 0:5, 4:5] = velocity_latent
+            # quantized[:, :, 0:5, 4:5] += velocity_latent
             # quantized = quantized + torch.randn_like(quantized) * 0.1  # Add small noise
             velocity_latent_important = velocity_latent.var(dim=(2, 3))  # Shape: (128,)
             important_channels = torch.topk(velocity_latent_important, k=10, dim=1).indices[0]
             # print(f"Important channels: {important_channels}")
             
-            quantized[:, important_channels, 0:5, 4:5] += velocity_latent[:,important_channels, 0:5, 4:5] * 15
+            quantized[:, important_channels, 0:5, 4:5] += velocity_latent[:,important_channels, 0:5, 4:5] * 10
             #re quantize the quantized tensor
             quantized , indices, commitment_loss, codebook_loss = world_model.vq(quantized)
             # quantized[:, :, 0:5, 4:5] *= 1

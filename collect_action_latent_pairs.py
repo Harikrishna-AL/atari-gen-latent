@@ -134,7 +134,7 @@ def collect_action_state_latent_triples(
             model = torch.compile(model)
         except Exception:
             pass
-    env = AtariBreakoutEnv(return_rgb=True)
+    env = AtariBreakoutEnv(return_rgb=True, frameskip=8)
     n_actions = env.action_space.n
     agent = RandomAgent(n_actions)
     actions = []
@@ -198,6 +198,106 @@ def collect_action_state_latent_triples(
         # Log summary statistics
         print("Action distribution:", {a: int((actions_np == a).sum()) for a in np.unique(actions_np)})
         print("Example latent code:", latents_np[0] if len(latents_np) > 0 else None)
+        
+def collect_action_state_latent_triples_multi_speed(
+    out_path='data/actions/action_state_latent_triples_multispeed.npz',
+    n_pairs=100_000,
+    max_steps_per_episode=1000,
+    seed=42
+):
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    device = get_device()
+    model, _ = load_latent_action_model('checkpoints/latent_action/best.pt', device)
+    model.to(device)
+    model.eval()
+    if device.type == 'cuda':
+        try:
+            model = torch.compile(model)
+        except Exception:
+            pass
+
+    frameskip_speeds = {
+        1: 2,  # slow
+        4: 0,  # normal
+        8: 1   # fast
+    }
+
+    actions = []
+    frames = []
+    latents = []
+    speed_indices = []
+
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    pbar = tqdm(total=n_pairs, desc='Collecting (action, frames, latent_code, speed_idx) quadruples')
+
+    try:
+        while len(actions) < n_pairs:
+            for frameskip, speed_idx in frameskip_speeds.items():
+                if len(actions) >= n_pairs:
+                    break
+                env = AtariBreakoutEnv(return_rgb=True, frameskip=frameskip)
+                n_actions = env.action_space.n
+                agent = RandomAgent(n_actions)
+
+                obs, _ = env.reset()
+                obs = obs[:, :, ::-1].copy()  # BGR -> RGB
+                frame_t = torch.from_numpy(obs).float().permute(2, 0, 1) / 255.0
+                last2_frames = [frame_t.clone(), frame_t.clone()]
+                done = False
+                steps = 0
+
+                while not done and steps < max_steps_per_episode and len(actions) < n_pairs:
+                    action = agent.select_action()
+                    next_obs, reward, terminated, truncated, info = env.step(action)
+                    next_obs = next_obs[:, :, ::-1].copy()  # BGR -> RGB
+                    frame_tp1 = torch.from_numpy(next_obs).float().permute(2, 0, 1) / 255.0
+
+                    stacked_frames = torch.cat(last2_frames, dim=0)
+                    try:
+                        with torch.no_grad():
+                            f1_batch = last2_frames[1].unsqueeze(0).to(device)
+                            frame_tp1_batch = frame_tp1.unsqueeze(0).to(device)
+                            _, indices, *_ = model(f1_batch, frame_tp1_batch)
+                    except Exception as e:
+                        print(f"Error during model call: {e}")
+                        raise
+
+                    latent_code = flatten_latent_indices(indices.cpu().squeeze(0))
+                    actions.append(int(action))
+                    frames.append(stacked_frames.cpu().numpy())
+                    latents.append(np.array(latent_code, dtype=np.int64))
+                    speed_indices.append(speed_idx)
+                    pbar.update(1)
+
+                    last2_frames[0] = last2_frames[1]
+                    last2_frames[1] = frame_tp1.clone()
+                    steps += 1
+                    if terminated or truncated:
+                        done = True
+
+                env.close()
+
+    except KeyboardInterrupt:
+        print('Interrupted. Saving collected data...')
+    finally:
+        pbar.close()
+        actions_np = np.array(actions, dtype=np.int64)
+        frames_np = np.stack(frames).astype(np.float32)
+        latents_np = np.stack(latents).astype(np.int64)
+        speed_idx_np = np.array(speed_indices, dtype=np.int64)
+
+        np.savez_compressed(out_path,
+                            actions=actions_np,
+                            frames=frames_np,
+                            latents=latents_np,
+                            speed_idx=speed_idx_np)
+
+        print(f"Saved {len(actions)} quadruples to {out_path}")
+        print("Action distribution:", {a: int((actions_np == a).sum()) for a in np.unique(actions_np)})
+        print("Speed index distribution:", {s: int((speed_idx_np == s).sum()) for s in np.unique(speed_idx_np)})
+        print("Example latent code:", latents_np[0] if len(latents_np) > 0 else None)
+
 
 def main():
     import argparse
@@ -207,13 +307,25 @@ def main():
     parser.add_argument('--max_steps_per_episode', type=int, default=1000)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--with_frames', action='store_true', help='Store (action, frames, latent_code) triples for action+state-to-latent training')
+    parser.add_argument('--with_speed', action='store_true', help='Collect (action, frames, latent_code, speed_idx) quadruples for multi-speed training')
     args = parser.parse_args()
-    if args.with_frames:
+    if args.with_frames and not args.with_speed:
         # If user didn't specify .npz, force it
         out_path = args.out
         if not out_path.endswith('.npz'):
             out_path = out_path.rsplit('.', 1)[0] + '.npz'
         collect_action_state_latent_triples(
+            out_path=out_path,
+            n_pairs=args.n_pairs,
+            max_steps_per_episode=args.max_steps_per_episode,
+            seed=args.seed
+        )
+    elif args.with_speed and args.with_frames:
+        # If user didn't specify .npz, force it
+        out_path = args.out
+        if not out_path.endswith('.npz'):
+            out_path = out_path.rsplit('.', 1)[0] + '.npz'
+        collect_action_state_latent_triples_multi_speed(
             out_path=out_path,
             n_pairs=args.n_pairs,
             max_steps_per_episode=args.max_steps_per_episode,

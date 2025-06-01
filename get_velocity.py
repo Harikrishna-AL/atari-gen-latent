@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from PIL import Image
 from latent_action_model import load_latent_action_model, ActionStateToLatentMLP
+import cv2
 
 
 def video_to_imgs(video_path: str, output_folder: str):
@@ -60,6 +61,8 @@ def get_latent(video_folder : str):
         frames = []
         for file in frame_files:
             img = Image.open(file).convert('RGB')
+            img_np = np.array(img)
+            img = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
             frame_np = np.array(img, dtype=np.float32) / 255.0
             tensor = torch.from_numpy(frame_np).permute(2, 0, 1).unsqueeze(0)
             frames.append(tensor)
